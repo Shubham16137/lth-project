@@ -1,0 +1,95 @@
+% IEEE two-column report (4-6 pages). Compile on Overleaf or with: pdflatex report && pdflatex report
+% Yellow-highlighted \todo{...} items must be replaced with YOUR numbers / observations before submission.
+\documentclass[conference]{IEEEtran}
+\usepackage{cite,amsmath,amssymb,graphicx,booktabs,xcolor,algorithm,algorithmic}
+\newcommand{\todo}[1]{\colorbox{yellow}{\textbf{[#1]}}}
+\newcommand{\figor}[2]{\IfFileExists{#1}{\includegraphics[width=\linewidth]{#1}}{\todo{missing figure \detokenize{#1}}}}
+
+\begin{document}
+\title{Reproducing the Lottery Ticket Hypothesis at Small Scale:\\Winning Tickets, Random Reinitialisation and Ablations}
+\author{\IEEEauthorblockN{\todo{Your name}}
+\IEEEauthorblockA{Deep Learning 2026 -- Paper Implementation Project\\ \todo{Affiliation, e-mail}}}
+\maketitle
+
+\begin{abstract}
+Frankle and Carbin~\cite{lth} conjecture that a randomly initialised dense network contains a sparse subnetwork---a \emph{winning ticket}---that, trained in isolation from its original initialisation, matches the dense network's accuracy in a comparable number of iterations. We re-implement iterative magnitude pruning (IMP) from scratch in PyTorch, reproduce the paper's central comparison (winning ticket versus random reinitialisation) for LeNet-300-100 on MNIST at reduced training length, and ablate pruning scope, pruning schedule and the reset point. \todo{One sentence with your headline result, e.g. ``Tickets keep dense accuracy down to X\% of weights while random reinitialisation degrades below Y\%.''}
+\end{abstract}
+
+\section{Introduction and Motivation}
+Pruning after training can remove most weights of a network with little loss, yet training the pruned architecture from scratch is usually reported to work poorly. The lottery ticket hypothesis (LTH) reconciles these observations: the \emph{initialisation} of the surviving weights matters. If true, sparse trainable networks exist at initialisation, which motivates cheaper training and a better understanding of why over-parameterised networks generalise. Our goals are to (i) re-build the core mechanism, (ii) reproduce the paper's main figure at a scale that fits a free Colab T4 or a laptop CPU, and (iii) test which ingredients matter.
+
+\section{Method}
+Let $f(x;\theta)$ be a network with initial parameters $\theta_0$, and let $m\in\{0,1\}^{|\theta|}$ be a binary mask. The masked network is $f(x;m\odot\theta)$. The hypothesis states that there is a mask $m$ such that training $f(x;m\odot\theta_0)$ reaches test accuracy $a'$ at iteration $j'$, while the dense network reaches $a$ at iteration $j$, with $a'\ge a$ and $j'\le j$ and $\|m\|_0\ll|\theta|$.
+
+\textbf{Iterative magnitude pruning (IMP).} Algorithm~\ref{alg:imp} summarises the procedure. After training, the $p\%$ of \emph{surviving} weights with the smallest magnitude are removed, the surviving weights are reset to their values in $\theta_0$, and the mask is held fixed during retraining. After $n$ rounds a fraction $(1-p)^n$ of the weights remain. In practice the mask is enforced by $w\leftarrow w\odot m$ after \emph{every} optimiser step; masking gradients alone is insufficient with Adam because its moment estimates would still move pruned weights.
+
+\begin{algorithm}[t]
+\caption{Iterative magnitude pruning with reset to $\theta_0$}\label{alg:imp}
+\begin{algorithmic}[1]
+\STATE Initialise $\theta_0$; $m\gets\mathbf{1}$
+\FOR{$r=0,1,\dots,R$}
+  \STATE $\theta\gets m\odot\theta_0$; train for $T$ iterations $\Rightarrow\theta_T$
+  \STATE Record validation-loss-optimal iteration and test accuracy there
+  \STATE $m\gets m\odot\mathbb{1}[\,|\theta_T|>\tau_p\,]$ \hfill ($\tau_p$: $p$-th percentile of surviving $|\theta_T|$)
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Control.} For each mask found by IMP we also train the \emph{same} sparse architecture from a fresh random initialisation ($\theta_0'\sim$ Glorot-normal). The ticket claim is supported only if the original initialisation outperforms this control.
+
+\textbf{Early stopping.} Following the paper, the early-stopping iteration is the iteration with minimum validation loss; we report test accuracy at that iteration. A 5\,000-image validation split is held out from the 60\,000 MNIST training images so the test set is never used for selection.
+
+\section{Implementation}
+All pruning logic (mask storage, magnitude ranking, reset/rewind, IMP loop, random-reinit control) is written by us in \texttt{lth/core.py}; only standard layers, Adam and torchvision datasets are used from PyTorch. We unit-test that (a) the intended fraction is pruned and smallest weights go first, (b) pruned weights remain exactly zero after optimiser steps, (c) masks are nested across rounds, and (d) global pruning hits the target sparsity.
+\textbf{Setup.} LeNet-300-100 (784-300-100-10) on MNIST; Adam, learning rate $1.2\times10^{-3}$, batch 60; Glorot-normal initialisation; pruning rates 20\% for the two hidden FC layers and 10\% for the output layer per round (layer-wise); $R=\todo{15}$ rounds; $T=\todo{10\,000}$ iterations per round; seeds $\{0,1,2\}$. \todo{Optional: Conv-2 on CIFAR-10 with its settings.}
+
+\textbf{What we changed relative to the paper.} \todo{List exactly: shorter training ($T$ vs.\ paper), validation split, number of seeds, anything else. Check the paper's appendix for its exact hyper-parameters.}
+
+\section{Results}
+\textbf{Reproduction.} Fig.~\ref{fig:main} plots test accuracy at early stopping and the early-stopping iteration against the percentage of weights remaining (mean $\pm$ std over 3 seeds). \todo{Describe: down to what \% do tickets stay at/above dense accuracy? Where does random reinitialisation start to drop? Does the ticket stop earlier?} Table~\ref{tab:main} gives numbers; we compare with the paper's Fig.~\todo{number} in Table~\ref{tab:paper}.
+\begin{figure}[t]\centering
+\figor{../figures/lenet_main.pdf}{}
+\caption{LeNet-300-100/MNIST: winning ticket vs.\ random reinitialisation. \todo{adapt caption}}\label{fig:main}
+\end{figure}
+
+\begin{table}[t]\centering\caption{Test accuracy (\%) at early stopping. \todo{Fill from \texttt{plot\_results.py}}}\label{tab:main}
+\begin{tabular}{@{}lccc@{}}\toprule
+Weights left (\%) & Ticket & Random reinit & Dense \\\midrule
+100 & \todo{} & -- & \todo{}\\
+\todo{51.2} & \todo{} & \todo{} & \\
+\todo{21.1} & \todo{} & \todo{} & \\
+\todo{3.6} & \todo{} & \todo{} & \\\bottomrule
+\end{tabular}\end{table}
+
+\begin{table}[t]\centering\caption{Ours versus paper at comparable sparsity. \todo{Read paper values off its figure; say so.}}\label{tab:paper}
+\begin{tabular}{@{}lcc@{}}\toprule
+Weights left (\%) & Ours & Paper \\\midrule
+\todo{} & \todo{} & \todo{}\\\bottomrule
+\end{tabular}\end{table}
+
+\section{Ablations}
+Each ablation changes one factor relative to the layer-wise, iterative, reset-to-$\theta_0$ baseline (Fig.~\ref{fig:abl}).
+\begin{enumerate}
+\item \textbf{Original vs.\ random initialisation} (Sec.~IV): the key control above.
+\item \textbf{Layer-wise vs.\ global pruning:} global ranking removes weights across layers jointly, so layers differ in density. \todo{Result and per-layer densities.}
+\item \textbf{Iterative vs.\ one-shot:} one-shot prunes to the target sparsity once from the trained dense net. \todo{Result.}
+\item \textbf{Rewinding to iteration $k$ instead of $0$ (here $k=500$):} following~\cite{stab}. \todo{Result; does it help at high sparsity?}
+\end{enumerate}
+\begin{figure}[t]\centering
+\figor{../figures/ablations.pdf}{}
+\caption{Ablations (mean $\pm$ std, 3 seeds). \todo{adapt caption}}\label{fig:abl}
+\end{figure}
+
+\section{Failure Cases and Limitations}
+\todo{Report what actually went wrong or surprised you. Candidates to check: (i) at very high sparsity tickets collapse and seed variance grows; (ii) sensitivity to learning rate; (iii) with short training the early-stopping iteration saturates at $T$ and the ``faster learning'' claim is hard to see; (iv) tickets are found only after training the dense network, so no training-cost saving; (v) unstructured sparsity gives no wall-clock speed-up on dense hardware.}
+
+\section{Conclusion}
+\todo{Three sentences: what was reproduced, what mattered most in the ablations, what you would do next.}
+
+\begin{thebibliography}{1}
+\bibitem{lth} J.~Frankle and M.~Carbin, ``The lottery ticket hypothesis: Finding sparse, trainable neural networks,'' in \emph{Proc.\ ICLR}, 2019, arXiv:1803.03635.
+\bibitem{stab} J.~Frankle, G.~K.~Dziugaite, D.~M.~Roy, and M.~Carbin, ``Stabilizing the lottery ticket hypothesis,'' arXiv:1903.01611, 2019.
+\bibitem{han} S.~Han, J.~Pool, J.~Tran, and W.~J.~Dally, ``Learning both weights and connections for efficient neural networks,'' in \emph{Proc.\ NeurIPS}, 2015.
+\bibitem{kingma} D.~P.~Kingma and J.~Ba, ``Adam: A method for stochastic optimization,'' in \emph{Proc.\ ICLR}, 2015.
+\end{thebibliography}
+\end{document}
