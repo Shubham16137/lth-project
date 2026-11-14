@@ -71,7 +71,7 @@ Quick smoke test without downloading data: `python run_experiments.py --name smo
 
 | Weights remaining (%) | Ticket acc (%) | Random reinit acc (%) | Ticket ES iter | Random ES iter |
 |---|---|---|---|---|
-| 100.0 | _96.7_ | – | _98.9_ | – |
+| 100.0 | _98.17%_ | – | _54.37%_ | – |
 | … | | | | |
 
 Figures: `figures/lenet_main.png`, `figures/ablations.png`.
